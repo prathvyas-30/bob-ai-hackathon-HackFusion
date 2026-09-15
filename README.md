@@ -17,9 +17,9 @@
 
 ## 🎯 Problem Statement
 
-> In 2–3 sentences: What problem does your project solve? Who experiences this problem?
 
-[Describe the real-world problem your project addresses. Be specific about who the user is and what pain point they face.]
+[The project solves the problem of the military organisations being unable to accurately identify mission-ready equipment and predict equipment failures in advance.
+Maintenance teams experience this problem because they rely on fixed schedules and have large amounts of sensor and service data that is not effectively analysed.]
 
 ---
 
@@ -27,7 +27,7 @@
 
 > In 2–3 sentences: What did you build? How does it solve the problem above?
 
-[Describe your solution clearly. Explain the core mechanism — what makes it work.]
+[We built a Mission Readiness & Predictive Maintenance Copilot that analyses equipment sensor data and service records to identify non-ready assets and detect potential component failures. It helps maintenance teams predict failures before a mission and create a prioritized maintenance plan, improving operational readiness and reducing unexpected breakdowns.]
 
 ---
 
@@ -45,11 +45,11 @@
 
 | Category | Technologies |
 |---|---|
-| **Languages** | [e.g., Python, TypeScript] |
-| **Frameworks** | [e.g., FastAPI, React] |
-| **IBM Technologies** | [e.g., watsonx.ai, IBM Bob, IBM Cloud] |
-| **Databases** | [e.g., PostgreSQL, Redis] |
-| **Other** | [e.g., Docker, GitHub Actions] |
+| **Languages** | [Python, HTML,CSS, JavaScript] |
+| **Frameworks** | [ RestAPI, React] |
+| **IBM Technologies** | [IBM Bob] |
+| **Databases** | [MongoDB Atlas] |
+| **Other** | [GitHub Actions] |
 
 ---
 
