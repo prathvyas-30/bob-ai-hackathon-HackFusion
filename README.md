@@ -8,10 +8,10 @@
 
 | Field | Value |
 |---|---|
-| **Team Name** | [Your Team Name] |
+| **Team Name** | [HackFusion] |
 | **Track** | [AI / DevOps / Sustainability / Open] |
-| **Team Lead** | [Name] — [email@ibm.com] |
-| **Members** | [Name 1], [Name 2], [Name 3] |
+| **Team Lead** | [Pratha Vyas] — [23it139@charusat.edu.in] |
+| **Members** | [Khwahish Buddhadev], [Vedant Shah], [Priyanshu Gohel] |
 
 ---
 
