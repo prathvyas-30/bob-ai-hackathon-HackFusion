@@ -25,19 +25,17 @@ Maintenance teams experience this problem because they rely on fixed schedules a
 
 ## 💡 Solution
 
-> In 2–3 sentences: What did you build? How does it solve the problem above?
-
 [We built a Mission Readiness & Predictive Maintenance Copilot that analyses equipment sensor data and service records to identify non-ready assets and detect potential component failures. It helps maintenance teams predict failures before a mission and create a prioritized maintenance plan, improving operational readiness and reducing unexpected breakdowns.]
 
 ---
 
 ## ✨ Key Features
 
-- **Feature 1:** [Brief description — e.g., "Real-time anomaly detection using watsonx.ai"]
-- **Feature 2:** [Brief description]
-- **Feature 3:** [Brief description]
-- **Feature 4:** [Optional]
-- **Feature 5:** [Optional]
+- **Mission Readiness Assessment –:** [Identifies which assets are ready or not ready for missions.]
+- **Sensor Data Analysis:** [Analyses equipment sensor data to detect abnormal conditions]
+- **Failure Prediction:** [Predicts components that may fail before the next mission.]
+- **AI-Powered Issue Explanation** [Explains the reasons behind each readiness or equipment issue.]
+
 
 ---
 
