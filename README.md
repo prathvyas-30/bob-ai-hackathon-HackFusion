@@ -9,7 +9,7 @@
 | Field | Value |
 |---|---|
 | **Team Name** | [HackFusion] |
-| **Track** | [AI / DevOps / Sustainability / Open] |
+| **Track** | [AI / Sustainability] |
 | **Team Lead** | [Pratha Vyas] — [23it139@charusat.edu.in] |
 | **Members** | [Khwahish Buddhadev], [Vedant Shah], [Priyanshu Gohel] |
 
