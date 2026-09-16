@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Aircraft Mission Readiness & Predictive Maintenance Dashboard</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Segoe UI",system-ui,sans-serif;background:#f0f2f5;color:#1f2328;font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+input:focus,button:focus{outline:2px solid #3b82d4;outline-offset:2px}
+button:active{opacity:.85;transform:translateY(1px)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:3px}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{opacity:.5}
+.tab-bar{display:flex;gap:4px;overflow-x:auto;padding:0 24px;border-bottom:1px solid #21262d}
+.tab{padding:9px 18px;cursor:pointer;border-radius:8px 8px 0 0;font-weight:500;font-size:13px;color:#8b949e;border-bottom:3px solid transparent;white-space:nowrap;user-select:none;transition:all .15s}
+.tab.active{color:#58a6ff;border-bottom-color:#58a6ff;background:rgba(56,139,248,.1);font-weight:700}
+.tab:hover:not(.active){color:#c9d1d9;background:rgba(255,255,255,.04)}
+.ac-card{background:#fff;border-radius:10px;padding:14px 18px;cursor:pointer;margin-bottom:10px;transition:box-shadow .15s}
+.ac-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.10)}
+.info-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6;align-items:center}
+.info-row:last-child{border-bottom:none}
+.section-hdr{font-size:11px;font-weight:700;letter-spacing:.10em;color:#57606a;border-bottom:2px solid #e5e7eb;padding-bottom:6px;margin:24px 0 14px;text-transform:uppercase}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.btn-primary{background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-weight:800;font-size:14px;cursor:pointer;letter-spacing:.04em}
+.btn-success{background:#16a34a;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-weight:700;font-size:13px;cursor:pointer}
+.btn-done{background:#dcfce7;color:#166534;border:2px solid #86efac;border-radius:8px;padding:10px 24px;font-weight:800;font-size:14px;cursor:default}
+.btn-undo{background:#fff;color:#dc2626;border:2px solid #fca5a5;border-radius:8px;padding:9px 20px;font-weight:700;font-size:13px;cursor:pointer}
+.btn-resubmit{background:#fff;color:#1d4ed8;border:2px solid #bfdbfe;border-radius:8px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer}
+@media(max-width:700px){.grid-2{grid-template-columns:1fr!important}.grid-dash{grid-template-columns:1fr!important}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useEffect } = React;
+
+// =========================================================
+// CONSTANTS
+// =========================================================
+const STATUS = {
+  READY: 'READY_TO_FLY',
+  MAINTENANCE: 'MAINTENANCE_REQUIRED',
+  NOT_READY: 'NOT_READY_TO_FLY',
+  LANDED: 'RECENTLY_LANDED',
+};
+const STATUS_LABELS = {
+  READY_TO_FLY: '🟢 READY TO FLY',
+  MAINTENANCE_REQUIRED: '🟡 MAINTENANCE REQUIRED',
+  NOT_READY_TO_FLY: '🔴 NOT READY TO FLY',
+  RECENTLY_LANDED: '🟠 RECENTLY LANDED',
+};
+const STATUS_COLORS = {
+  READY_TO_FLY: '#16a34a',
+  MAINTENANCE_REQUIRED: '#ca8a04',
+  NOT_READY_TO_FLY: '#dc2626',
+  RECENTLY_LANDED: '#ea580c',
+};
+const STATUS_BG = {
+  READY_TO_FLY: '#f0fdf4',
+  MAINTENANCE_REQUIRED: '#fefce8',
+  NOT_READY_TO_FLY: '#fef2f2',
+  RECENTLY_LANDED: '#fff7ed',
+};
+const STATUS_BORDER = {
+  READY_TO_FLY: '#86efac',
+  MAINTENANCE_REQUIRED: '#fde047',
+  NOT_READY_TO_FLY: '#fca5a5',
+  RECENTLY_LANDED: '#fdba74',
+};
+
+// =========================================================
+// SENSOR STANDARDS
+// =========================================================
+const SENSOR_STANDARDS = {
+  engineTemp:   { key:'engineTemp',   label:'Engine Temperature',  unit:'°C',   min:1000, max:1390, criticalLow:900,   criticalHigh:1490, desc:'Standard: 1000–1390°C (±50°C tolerance)' },
+  aircraftTemp: { key:'aircraftTemp', label:'Aircraft Temperature', unit:'°C',   min:50,   max:90,   criticalLow:30,    criticalHigh:110,  desc:'Standard: 70°C ±20°C (50–90°C normal range)' },
+  vibration:    { key:'vibration',    label:'Vibration',           unit:'inch',  min:0.0,  max:0.2,  criticalLow:-0.05, criticalHigh:0.35, desc:'Standard: 0.0–0.2 inch' },
+  pressure:     { key:'pressure',     label:'Pressure',            unit:'psi',   min:10.9, max:11.0, criticalLow:10.5,  criticalHigh:11.5, desc:'Standard: 10.9–11.0 psi' },
+  oilPressure:  { key:'oilPressure',  label:'Oil Pressure',        unit:'psi',   min:30,   max:120,  criticalLow:15,    criticalHigh:140,  desc:'Standard: 30–120 psi' },
+  voltage:      { key:'voltage',      label:'Voltage',             unit:'V',     min:115,  max:150,  criticalLow:100,   criticalHigh:165,  desc:'Standard: 115–150 V' },
+  current:      { key:'current',      label:'Current',             unit:'A',     min:200,  max:400,  criticalLow:160,   criticalHigh:450,  desc:'Standard: 200–400 A' },
+};
+const SENSOR_KEYS = ['engineTemp','aircraftTemp','vibration','pressure','oilPressure','voltage','current'];
+const SENSOR_WEIGHTS = { engineTemp:.22, vibration:.20, oilPressure:.18, pressure:.14, aircraftTemp:.12, voltage:.08, current:.06 };
+const COMPONENT_MAP = {
+  engineTemp:   { system:'Cooling System / Engine Thermal Management',         code:'cooling' },
+  aircraftTemp: { system:'Airframe Thermal / Environmental Control System',    code:'ecs' },
+  vibration:    { system:'Engine Bearing / Mechanical Drive System',           code:'bearing' },
+  pressure:     { system:'Hydraulic / Pneumatic Pressure System',              code:'hydraulic' },
+  oilPressure:  { system:'Engine Lubrication System',                          code:'lubrication' },
+  voltage:      { system:'Electrical Power Generation System',                 code:'electrical' },
+  current:      { system:'Electrical Load / Power Distribution System',        code:'power' },
+};
+
+// =========================================================
+// DETERMINISTIC RISK ENGINE
+// =========================================================
+function sensorDeviation(value, std) {
+  const { min, max, criticalLow, criticalHigh } = std;
+  if (value >= min && value <= max) return { condition:'NORMAL', score:0 };
+  if (value < min) {
+    const below = min - value;
+    const critRange = min - criticalLow;
+    const ratio = Math.min(1, below / critRange);
+    if (ratio >= 0.6) return { condition:'CRITICAL', score: 0.85 + ratio*0.15 };
+    return { condition:'WARNING', score: 0.2 + ratio*0.65 };
+  }
+  const above = value - max;
+  const critRange = criticalHigh - max;
+  const ratio = Math.min(1, above / critRange);
+  if (ratio >= 0.6) return { condition:'CRITICAL', score: 0.85 + ratio*0.15 };
+  return { condition:'WARNING', score: 0.2 + ratio*0.65 };
+}
+
+function analyzeSensors(sensorValues) {
+  const conditions = {}, contributions = {};
+  let weightedScore = 0, hasCritical = false;
+  for (const key of SENSOR_KEYS) {
+    const val = parseFloat(sensorValues[key]);
+    if (isNaN(val)) continue;
+    const result = sensorDeviation(val, SENSOR_STANDARDS[key]);
+    conditions[key] = result.condition;
+    contributions[key] = { ...result, weight: SENSOR_WEIGHTS[key] };
+    weightedScore += result.score * SENSOR_WEIGHTS[key];
+    if (result.condition === 'CRITICAL') hasCritical = true;
+  }
+  const totalWeight = SENSOR_KEYS.reduce((s,k) => s + SENSOR_WEIGHTS[k], 0);
+  const rawRisk = Math.min(100, Math.round((weightedScore / totalWeight) * 100));
+  const riskScore = hasCritical ? Math.max(rawRisk, 81) : rawRisk;
+  let riskLevel = riskScore<=30?'LOW':riskScore<=60?'MEDIUM':riskScore<=80?'HIGH':'CRITICAL';
+
+  const issuesList = [];
+  for (const key of SENSOR_KEYS) {
+    const c = contributions[key];
+    if (!c || c.score === 0) continue;
+    issuesList.push({
+      sensor: key, sensorLabel: SENSOR_STANDARDS[key].label,
+      system: COMPONENT_MAP[key].system, code: COMPONENT_MAP[key].code,
+      condition: c.condition, confidence: Math.round(Math.min(99, 50 + c.score*50)), score: c.score,
+    });
+  }
+  issuesList.sort((a,b) => b.score - a.score);
+
+  const abnormal = SENSOR_KEYS.filter(k => conditions[k] && conditions[k] !== 'NORMAL');
+  let explanation = '';
+  if (abnormal.length === 0) {
+    explanation = 'All sensor readings are within normal operating ranges. Aircraft systems are performing nominally. No anomalies detected.';
+  } else {
+    const parts = abnormal.map(k => {
+      const val = parseFloat(sensorValues[k]);
+      const std = SENSOR_STANDARDS[k];
+      const diff = val < std.min
+        ? `${(std.min - val).toFixed(2)} ${std.unit} below minimum`
+        : `${(val - std.max).toFixed(2)} ${std.unit} above maximum`;
+      return `${std.label} is ${conditions[k]==='CRITICAL'?'critically':'slightly'} abnormal (${val}${std.unit}, ${diff})`;
+    });
+    explanation = parts.join('. ') + '. ';
+    if (issuesList.length > 0) explanation += `Primary concern is the ${issuesList[0].system} requiring immediate inspection. `;
+    if (hasCritical) explanation += 'Critical sensor condition detected — aircraft is NOT cleared for flight operations until inspection is complete.';
+    else if (riskLevel==='HIGH') explanation += 'Elevated risk profile — maintenance inspection recommended before next flight.';
+    else explanation += 'Monitoring and scheduled maintenance inspection recommended.';
+  }
+
+  let newStatus;
+  if (hasCritical || riskLevel==='CRITICAL') newStatus = STATUS.NOT_READY;
+  else if (riskLevel==='HIGH' || riskLevel==='MEDIUM') newStatus = STATUS.MAINTENANCE;
+  else newStatus = STATUS.READY;
+
+  const primaryFactor = issuesList.length > 0 ? `⚠️ ${issuesList[0].system}` : '✅ No abnormal contributing factors';
+  return { conditions, contributions, riskScore, riskLevel, predictedIssues:issuesList,
+           predictionConfidence: issuesList.length>0?issuesList[0].confidence:0,
+           aiExplanation:explanation, primaryFactor, newStatus, hasCritical };
+}
+
+function validateSensorInputs(vals) {
+  const errors = {};
+  for (const key of SENSOR_KEYS) {
+    const raw = vals[key];
+    if (raw==='' || raw===null || raw===undefined) { errors[key]='Required — enter a numeric value'; continue; }
+    if (isNaN(parseFloat(raw))) errors[key]='Invalid — must be numeric (e.g. 1050.5)';
+  }
+  return errors;
+}
+
+function computeStatusFromAc(ac) {
+  const allDone = ac.requiredMaintenance.length===0 || ac.requiredMaintenance.every(m => ac.maintenanceCompletionState[m.id]);
+  if (!allDone) return ac.components.some(c=>c.status==='FAIL') ? STATUS.NOT_READY : STATUS.MAINTENANCE;
+  if (ac.sensorSubmitted && ac.riskScore !== null) {
+    const hasCritSensor = Object.values(ac.sensorConditions||{}).some(c=>c==='CRITICAL');
+    if (hasCritSensor || ac.riskLevel==='CRITICAL') return STATUS.NOT_READY;
+    if (ac.riskLevel==='HIGH' || ac.riskLevel==='MEDIUM') return STATUS.MAINTENANCE;
+    return STATUS.READY;
+  }
+  return STATUS.READY;
+}
+
+function maintenanceLabel(ac, st) {
+  if (st===STATUS.READY) return 'Complete';
+  if (st===STATUS.NOT_READY) return 'Critical Repair Required';
+  if (st===STATUS.MAINTENANCE) return 'Maintenance Required';
+  return ac.maintenanceStatus;
+}
+
+function condIcon(c){ return c==='CRITICAL'?'🔴':c==='WARNING'?'⚠️':'🟢'; }
+function condLabel(c){ return c==='CRITICAL'?'CRITICAL':c==='WARNING'?'WARNING':'NORMAL'; }
+function condColor(c){ return c==='CRITICAL'?'#dc2626':c==='WARNING'?'#ca8a04':'#16a34a'; }
+function riskColor(r){ return r==='CRITICAL'?'#dc2626':r==='HIGH'?'#ea580c':r==='MEDIUM'?'#ca8a04':'#16a34a'; }
+function riskIcon(r){ return r==='CRITICAL'?'🔴':r==='HIGH'?'🟠':r==='MEDIUM'?'🟡':'🟢'; }
+
+// =========================================================
+// SAMPLE DATA
+// =========================================================
+const INITIAL_AIRCRAFT = [
+  // ── READY TO FLY ──────────────────────────────────────
+  {
+    id:'A-101', name:'Multi-Role Fighter', model:'F/A-18E Super Hornet', registration:'NX-7741-F',
+    status:STATUS.READY, maintenanceStatus:'Complete', lastMaintenanceDate:'2025-06-10',
+    totalOperatingHours:2847, generalCondition:'Excellent',
+    goingToFly:false, flightDuration:'', arrivalTime:'',
+    sensorData:{engineTemp:'1195',aircraftTemp:'72',vibration:'0.10',pressure:'10.95',oilPressure:'85',voltage:'132',current:'310'},
+    sensorConditions:{engineTemp:'NORMAL',aircraftTemp:'NORMAL',vibration:'NORMAL',pressure:'NORMAL',oilPressure:'NORMAL',voltage:'NORMAL',current:'NORMAL'},
+    sensorSubmitted:true, riskScore:4, riskLevel:'LOW',
+    predictedIssues:[], predictionConfidence:0,
+    aiExplanation:'All sensor readings are within normal operating ranges. Aircraft systems are performing nominally. No anomalies detected.',
+    primaryFactor:'✅ No abnormal contributing factors',
+    aiAnalysisHistory:[{date:'2025-06-10',riskScore:4,riskLevel:'LOW',issue:'No issues detected',status:STATUS.READY}],
+    components:[
+      {id:'c1',name:'Engine (GE F414)',condition:'Healthy',status:'OK'},
+      {id:'c2',name:'Landing Gear',condition:'Healthy',status:'OK'},
+      {id:'c3',name:'Avionics Suite',condition:'Healthy',status:'OK'},
+      {id:'c4',name:'Fuel System',condition:'Healthy',status:'OK'},
+      {id:'c5',name:'Hydraulic System',condition:'Healthy',status:'OK'},
+      {id:'c6',name:'Flight Control Surfaces',condition:'Healthy',status:'OK'},
+      {id:'c7',name:'Environmental Control System',condition:'Healthy',status:'OK'},
+    ],
+    requiredMaintenance:[], maintenanceCompletionState:{},
+    maintenanceHistory:[
+      {date:'2025-06-10',type:'Scheduled Maintenance',description:'100-hour inspection completed. All systems checked and certified serviceable.',technician:'SGT. R. Mitchell'},
+      {date:'2025-04-22',type:'Component Replacement',description:'Port wing tip sensor replaced. Calibration verified.',technician:'CPL. D. Torres'},
+    ],
+    flightHistory:[
+      {date:'2025-06-12',duration:'01:45:20',mission:'Combat Air Patrol — Sector 7',pilot:'MAJ. K. Larson',notes:'Nominal flight, no incidents'},
+      {date:'2025-05-30',duration:'02:10:05',mission:'Tactical Intercept Exercise',pilot:'CAPT. S. Park',notes:'Minor turbulence at high altitude, systems performed normally'},
+    ],
+    damageHistory:[],
+  },
+  {
+    id:'A-102', name:'Air Superiority Fighter', model:'F-22A Raptor', registration:'NX-8815-R',
+    status:STATUS.READY, maintenanceStatus:'Complete', lastMaintenanceDate:'2025-06-08',
+    totalOperatingHours:1923, generalCondition:'Excellent',
+    goingToFly:true, flightDuration:'', arrivalTime:'',
+    sensorData:{engineTemp:'1140',aircraftTemp:'68',vibration:'0.08',pressure:'10.96',oilPressure:'75',voltage:'128',current:'290'},
+    sensorConditions:{engineTemp:'NORMAL',aircraftTemp:'NORMAL',vibration:'NORMAL',pressure:'NORMAL',oilPressure:'NORMAL',voltage:'NORMAL',current:'NORMAL'},
+    sensorSubmitted:true, riskScore:3, riskLevel:'LOW',
+    predictedIssues:[], predictionConfidence:0,
+    aiExplanation:'All sensor readings are within normal operating ranges. No anomalies detected.',
+    primaryFactor:'✅ No abnormal contributing factors',
+    aiAnalysisHistory:[{date:'2025-06-08',riskScore:3,riskLevel:'LOW',issue:'No issues detected',status:STATUS.READY}],
+    components:[
+      {id:'c1',name:'Engine (P&W F119)',condition:'Healthy',status:'OK'},
+      {id:'c2',name:'Landing Gear',condition:'Healthy',status:'OK'},
+      {id:'c3',name:'Stealth Coating (LO)',condition:'Healthy',status:'OK'},
+      {id:'c4',name:'AN/APG-77 AESA Radar',condition:'Healthy',status:'OK'},
+      {id:'c5',name:'Fuel System',condition:'Healthy',status:'OK'},
+      {id:'c6',name:'Thrust Vector Control',condition:'Healthy',status:'OK'},
+    ],
+    requiredMaintenance:[], maintenanceCompletionState:{},
+    maintenanceHistory:[
+      {date:'2025-06-08',type:'Scheduled Maintenance',description:'200-hour inspection completed. LO coating touch-up applied. All systems nominal.',technician:'SSgt. C. Morgan'},
+    ],
+    flightHistory:[
+      {date:'2025-06-11',duration:'02:30:00',mission:'Intercept Patrol — Northern Corridor',pilot:'COL. J. Harrington',notes:'Clean mission, no radar contacts'},
+    ],
+    damageHistory:[],
+  },
+  // ── MAINTENANCE REQUIRED ──────────────────────────────
+  {
+    id:'A-201', name:'Strike Fighter', model:'F-35A Lightning II', registration:'NX-3301-A',
+    status:STATUS.MAINTENANCE, maintenanceStatus:'Inspection Required', lastMaintenanceDate:'2025-05-20',
+    totalOperatingHours:3512, generalCondition:'Fair',
+    goingToFly:false, flightDuration:'', arrivalTime:'',
+    sensorData:{engineTemp:'1250',aircraftTemp:'88',vibration:'0.17',pressure:'10.93',oilPressure:'115',voltage:'148',current:'390'},
+    sensorConditions:{engineTemp:'NORMAL',aircraftTemp:'WARNING',vibration:'WARNING',pressure:'NORMAL',oilPressure:'WARNING',voltage:'WARNING',current:'WARNING'},
+    sensorSubmitted:true, riskScore:47, riskLevel:'MEDIUM',
+    predictedIssues:[
+      {sensor:'vibration',sensorLabel:'Vibration',system:'Engine Bearing / Mechanical Drive System',code:'bearing',condition:'WARNING',confidence:71,score:.42},
+      {sensor:'oilPressure',sensorLabel:'Oil Pressure',system:'Engine Lubrication System',code:'lubrication',condition:'WARNING',confidence:65,score:.35},
+    ],
+    predictionConfidence:71,
+    aiExplanation:'Vibration readings approach the upper warning threshold at 0.17 inch. Oil pressure is near the upper limit at 115 psi. Aircraft temperature is elevated at 88°C. Voltage and current are near maximum acceptable levels. Combined indicators suggest early signs of mechanical wear and potential lubrication system stress. Monitoring and scheduled maintenance inspection recommended before next flight.',
+    primaryFactor:'⚠️ Engine Bearing / Mechanical Drive System',
+    aiAnalysisHistory:[
+      {date:'2025-06-05',riskScore:47,riskLevel:'MEDIUM',issue:'Engine Bearing / Mechanical System warning',status:STATUS.MAINTENANCE},
+      {date:'2025-05-20',riskScore:22,riskLevel:'LOW',issue:'No issues detected',status:STATUS.READY},
+    ],
+    components:[
+      {id:'c1',name:'Engine (P&W F135)',condition:'Healthy',status:'OK'},
+      {id:'c2',name:'Landing Gear',condition:'Healthy',status:'OK'},
+      {id:'c3',name:'AN/APG-81 AESA Radar',condition:'Healthy',status:'OK'},
+      {id:'c4',name:'Fuel System',condition:'Healthy',status:'OK'},
+      {id:'c5',name:'Engine Vibration Dampers',condition:'Degraded',status:'WARN',faultDesc:'Vibration slightly elevated — damper wear suspected',severity:'Medium',dateDetected:'2025-06-05',action:'Inspect and replace if wear confirmed'},
+      {id:'c6',name:'Oil Lubrication System',condition:'Degraded',status:'WARN',faultDesc:'Oil pressure approaching upper limit — check for blockage',severity:'Medium',dateDetected:'2025-06-05',action:'Inspect oil lines and filter'},
+    ],
+    requiredMaintenance:[
+      {id:'m1',task:'Engine Vibration Damper Inspection',type:'inspection',required:true},
+      {id:'m2',task:'Oil System Inspection and Filter Check',type:'inspection',required:true},
+    ],
+    maintenanceCompletionState:{m1:false,m2:false},
+    maintenanceHistory:[
+      {date:'2025-05-20',type:'Scheduled Maintenance',description:'150-hour inspection completed. All systems serviceable at time of inspection.',technician:'SGT. A. Williams'},
+    ],
+    flightHistory:[
+      {date:'2025-06-03',duration:'03:15:40',mission:'Close Air Support — Exercise BLUE LANCE',pilot:'MAJ. R. Chen',notes:'Mild vibration noted at high power settings. Reported for inspection.'},
+    ],
+    damageHistory:[
+      {date:'2025-06-03',component:'Engine Vibration Dampers',description:'Elevated vibration pattern detected during post-flight inspection',severity:'Medium',repaired:false},
+    ],
+  },
+  {
+    id:'A-202', name:'Ground Attack Aircraft', model:'A-10C Thunderbolt II', registration:'NX-5502-G',
+    status:STATUS.MAINTENANCE, maintenanceStatus:'Maintenance Due', lastMaintenanceDate:'2025-04-15',
+    totalOperatingHours:7284, generalCondition:'Fair',
+    goingToFly:false, flightDuration:'', arrivalTime:'',
+    sensorData:{engineTemp:'1050',aircraftTemp:'82',vibration:'0.14',pressure:'10.91',oilPressure:'95',voltage:'138',current:'340'},
+    sensorConditions:{engineTemp:'NORMAL',aircraftTemp:'WARNING',vibration:'WARNING',pressure:'WARNING',oilPressure:'NORMAL',voltage:'NORMAL',current:'NORMAL'},
+    sensorSubmitted:true, riskScore:38, riskLevel:'MEDIUM',
+    predictedIssues:[
+      {sensor:'vibration',sensorLabel:'Vibration',system:'Engine Bearing / Mechanical Drive System',code:'bearing',condition:'WARNING',confidence:62,score:.28},
+      {sensor:'aircraftTemp',sensorLabel:'Aircraft Temperature',system:'Airframe Thermal / Environmental Control System',code:'ecs',condition:'WARNING',confidence:55,score:.22},
+    ],
+    predictionConfidence:62,
+    aiExplanation:'Aircraft temperature is elevated at 82°C, approaching the upper boundary. Vibration is above the standard range at 0.14 inch, indicating possible mechanical wear. Pressure is slightly below the standard lower limit at 10.91 psi. Maintenance inspection is overdue given total operating hours and multiple warning-level readings.',
+    primaryFactor:'⚠️ Engine Bearing / Mechanical Drive System',
+    aiAnalysisHistory:[{date:'2025-06-01',riskScore:38,riskLevel:'MEDIUM',issue:'Multiple warning-level sensors',status:STATUS.MAINTENANCE}],
+    components:[
+      {id:'c1',name:'TF34 Engines (x2)',condition:'Healthy',status:'OK'},
+      {id:'c2',name:'GAU-8 Avenger Cannon',condition:'Healthy',status:'OK'},
+      {id:'c3',name:'Landing Gear',condition:'Healthy',status:'OK'},
+      {id:'c4',name:'Titanium Bathtub Armor',condition:'Healthy',status:'OK'},
+      {id:'c5',name:'Hydraulic System',condition:'Degraded',status:'WARN',faultDesc:'Hydraulic pressure slightly below standard — check for minor leak',severity:'Low',dateDetected:'2025-06-01',action:'Inspect hydraulic lines and top up reservoir'},
+      {id:'c6',name:'Environmental Control System',condition:'Degraded',status:'WARN',faultDesc:'Elevated airframe temperature — ECS efficiency reduced',severity:'Low',dateDetected:'2025-06-01',action:'ECS filter cleaning and thermal inspection'},
+    ],
+    requiredMaintenance:[
+      {id:'m1',task:'Hydraulic System Pressure Check and Inspection',type:'inspection',required:true},
+      {id:'m2',task:'ECS Filter Cleaning and Thermal Inspection',type:'service',required:true},
+      {id:'m3',task:'200-hour Scheduled Maintenance (Overdue)',type:'scheduled',required:true},
+    ],
+    maintenanceCompletionState:{m1:false,m2:false,m3:false},
+    maintenanceHistory:[
+      {date:'2025-04-15',type:'Scheduled Maintenance',description:'100-hour inspection completed.',technician:'SSgt. P. Garcia'},
+    ],
+    flightHistory:[
+      {date:'2025-05-28',duration:'02:05:10',mission:'Forward Air Control Support — Area 4',pilot:'MAJ. B. Sullivan',notes:'Slight hydraulic pressure fluctuation noted on return'},
+    ],
+    damageHistory:[],
+  },
+  // ── NOT READY TO FLY ─────────────────────────────────
+  {
+    id:'A-301', name:'Strategic Bomber', model:'B-1B Lancer', registration:'NX-9901-B',
+    status:STATUS.NOT_READY, maintenanceStatus:'Critical Repair Required', lastMaintenanceDate:'2025-05-01',
+    totalOperatingHours:9145, generalCondition:'Poor',
+    goingToFly:false, flightDuration:'', arrivalTime:'',
+    sensorData:{engineTemp:'1520',aircraftTemp:'105',vibration:'0.38',pressure:'10.6',oilPressure:'22',voltage:'98',current:'460'},
+    sensorConditions:{engineTemp:'CRITICAL',aircraftTemp:'CRITICAL',vibration:'CRITICAL',pressure:'CRITICAL',oilPressure:'CRITICAL',voltage:'CRITICAL',current:'CRITICAL'},
+    sensorSubmitted:true, riskScore:96, riskLevel:'CRITICAL',
+    predictedIssues:[
+      {sensor:'vibration',sensorLabel:'Vibration',system:'Engine Bearing / Mechanical Drive System',code:'bearing',condition:'CRITICAL',confidence:97,score:1.0},
+      {sensor:'engineTemp',sensorLabel:'Engine Temperature',system:'Cooling System / Engine Thermal Management',code:'cooling',condition:'CRITICAL',confidence:95,score:.98},
+      {sensor:'oilPressure',sensorLabel:'Oil Pressure',system:'Engine Lubrication System',code:'lubrication',condition:'CRITICAL',confidence:92,score:.94},
+      {sensor:'voltage',sensorLabel:'Voltage',system:'Electrical Power Generation System',code:'electrical',condition:'CRITICAL',confidence:89,score:.89},
+    ],
+    predictionConfidence:97,
+    aiExplanation:'CRITICAL: Multiple sensor systems are beyond safe operating limits. Engine temperature is critically high at 1520°C (130°C above maximum). Vibration is critically elevated at 0.38 inch. Oil pressure has collapsed to 22 psi (critically below minimum of 30 psi). Voltage has dropped to 98 V (critically below minimum of 115 V). Aircraft temperature is critically elevated at 105°C. This aircraft presents an immediate danger-of-flight condition and must NOT be operated until all critical faults are rectified and re-certified.',
+    primaryFactor:'🔴 Engine Bearing / Mechanical Drive System — CRITICAL',
+    aiAnalysisHistory:[
+      {date:'2025-06-07',riskScore:96,riskLevel:'CRITICAL',issue:'Multiple critical sensor failures',status:STATUS.NOT_READY},
+      {date:'2025-05-28',riskScore:71,riskLevel:'HIGH',issue:'Engine temperature warning',status:STATUS.NOT_READY},
+    ],
+    components:[
+      {id:'c1',name:'Engine Bearing Assembly (F101)',condition:'Damaged',status:'FAIL',faultDesc:'Catastrophic bearing wear detected — imminent failure risk',severity:'Critical',dateDetected:'2025-06-07',action:'Immediate engine removal and bearing replacement',replacementRequired:true},
+      {id:'c2',name:'Engine Cooling System',condition:'Damaged',status:'FAIL',faultDesc:'Cooling system failure — engine overheating to critical levels',severity:'Critical',dateDetected:'2025-06-07',action:'Cooling system replacement and engine thermal inspection',replacementRequired:true},
+      {id:'c3',name:'Engine Lubrication System',condition:'Damaged',status:'FAIL',faultDesc:'Oil pressure critically low — possible oil pump failure or major leak',severity:'Critical',dateDetected:'2025-06-07',action:'Oil pump inspection and replacement, full oil system flush',replacementRequired:true},
+      {id:'c4',name:'Electrical Power Generator',condition:'Damaged',status:'FAIL',faultDesc:'Generator voltage critically below minimum — generator failure',severity:'Critical',dateDetected:'2025-06-07',action:'Generator replacement and electrical system inspection',replacementRequired:true},
+      {id:'c5',name:'Landing Gear',condition:'Healthy',status:'OK'},
+      {id:'c6',name:'Avionics Suite',condition:'Healthy',status:'OK'},
+    ],
+    requiredMaintenance:[
+      {id:'m1',task:'Engine Bearing Assembly Replacement',type:'replacement',required:true},
+      {id:'m2',task:'Engine Cooling System Replacement',type:'replacement',required:true},
+      {id:'m3',task:'Oil Pump Replacement and System Flush',type:'replacement',required:true},
+      {id:'m4',task:'Electrical Generator Replacement',type:'replacement',required:true},
+      {id:'m5',task:'Full System Re-certification after Repairs',type:'certification',required:true},
+    ],
+    maintenanceCompletionState:{m1:false,m2:false,m3:false,m4:false,m5:false},
+    maintenanceHistory:[
+      {date:'2025-05-01',type:'Scheduled Maintenance',description:'200-hour inspection. Minor oil pressure warning noted. Monitoring ordered.',technician:'SGT. K. Brown'},
+    ],
+    flightHistory:[
+      {date:'2025-06-05',duration:'04:20:15',mission:'Long Range Strike Patrol — Zone Alpha',pilot:'LTC. M. Davis',notes:'Multiple system warnings during flight. Emergency return. Aircraft grounded on landing.'},
+    ],
+    damageHistory:[
+      {date:'2025-06-05',component:'Engine Bearing Assembly',description:'Catastrophic vibration and overheating during flight',severity:'Critical',repaired:false},
+      {date:'2025-06-05',component:'Engine Cooling System',description:'Thermal overload detected',severity:'Critical',repaired:false},
+      {date:'2025-06-07',component:'Electrical Generator',description:'Generator failure — voltage critically low',severity:'Critical',repaired:false},
+    ],
+  },
+  {
+    id:'A-302', name:'Electronic Warfare Aircraft', model:'EA-18G Growler', registration:'NX-6603-E',
+    status:STATUS.NOT_READY, maintenanceStatus:'Repair In Progress', lastMaintenanceDate:'2025-05-28',
+    totalOperatingHours:4210, generalCondition:'Poor',
+    goingToFly:false, flightDuration:'', arrivalTime:'',
+    sensorData:{engineTemp:'1445',aircraftTemp:'94',vibration:'0.27',pressure:'10.55',oilPressure:'18',voltage:'108',current:'165'},
+    sensorConditions:{engineTemp:'CRITICAL',aircraftTemp:'CRITICAL',vibration:'CRITICAL',pressure:'CRITICAL',oilPressure:'CRITICAL',voltage:'CRITICAL',current:'CRITICAL'},
+    sensorSubmitted:true, riskScore:88, riskLevel:'CRITICAL',
+    predictedIssues:[
+      {sensor:'oilPressure',sensorLabel:'Oil Pressure',system:'Engine Lubrication System',code:'lubrication',condition:'CRITICAL',confidence:94,score:.93},
+      {sensor:'vibration',sensorLabel:'Vibration',system:'Engine Bearing / Mechanical Drive System',code:'bearing',condition:'CRITICAL',confidence:90,score:.88},
+      {sensor:'pressure',sensorLabel:'Pressure',system:'Hydraulic / Pneumatic Pressure System',code:'hydraulic',condition:'CRITICAL',confidence:85,score:.82},
+    ],
+    predictionConfidence:94,
+    aiExplanation:'CRITICAL: Engine temperature is critically elevated at 1445°C (55°C above maximum). Oil pressure has critically dropped to 18 psi (minimum is 30 psi). Vibration is critically high at 0.27 inch. Hydraulic pressure is critically low at 10.55 psi. Voltage is below minimum at 108 V. Multiple critical systems require immediate attention. Aircraft cannot be operated safely.',
+    primaryFactor:'🔴 Engine Lubrication System — CRITICAL',
+    aiAnalysisHistory:[{date:'2025-06-06',riskScore:88,riskLevel:'CRITICAL',issue:'Oil pressure failure, bearing damage',status:STATUS.NOT_READY}],
+    components:[
+      {id:'c1',name:'Engine Lubrication / Oil Pump',condition:'Damaged',status:'FAIL',faultDesc:'Oil pressure critically low — oil pump failure confirmed',severity:'Critical',dateDetected:'2025-06-06',action:'Oil pump replacement required',replacementRequired:true},
+      {id:'c2',name:'Hydraulic Pump',condition:'Damaged',status:'FAIL',faultDesc:'Hydraulic pressure critically low — pump failure detected',severity:'Critical',dateDetected:'2025-06-06',action:'Hydraulic pump replacement required',replacementRequired:true},
+      {id:'c3',name:'Engine Bearing',condition:'Damaged',status:'FAIL',faultDesc:'Bearing vibration critically high — bearing wear/damage confirmed',severity:'Critical',dateDetected:'2025-06-06',action:'Engine bearing inspection and replacement',replacementRequired:true},
+      {id:'c4',name:'ALQ-99 ECM Pods',condition:'Healthy',status:'OK'},
+      {id:'c5',name:'Landing Gear',condition:'Healthy',status:'OK'},
+      {id:'c6',name:'AN/APG-79 Radar',condition:'Healthy',status:'OK'},
+    ],
+    requiredMaintenance:[
+      {id:'m1',task:'Oil Pump Replacement',type:'replacement',required:true},
+      {id:'m2',task:'Hydraulic Pump Replacement',type:'replacement',required:true},
+      {id:'m3',task:'Engine Bearing Inspection and Replacement',type:'replacement',required:true},
+    ],
+    maintenanceCompletionState:{m1:false,m2:false,m3:false},
+    maintenanceHistory:[
+      {date:'2025-05-28',type:'Unscheduled Repair',description:'Hydraulic pressure warning. Minor repair completed. Aircraft cleared conditionally.',technician:'SSgt. C. Morgan'},
+    ],
+    flightHistory:[
+      {date:'2025-06-04',duration:'02:55:30',mission:'EW Support — Exercise IRON SKY',pilot:'CDR. P. Lee',notes:'Oil pressure warning at 45min mark. Diverted. Aircraft grounded on landing.'},
+    ],
+    damageHistory:[
+      {date:'2025-06-04',component:'Oil Pump',description:'Oil pressure warning escalated to failure during flight',severity:'Critical',repaired:false},
+      {date:'2025-06-04',component:'Hydraulic Pump',description:'Hydraulic pressure lost mid-flight',severity:'Critical',repaired:false},
+    ],
+  },
+  // ── RECENTLY LANDED ──────────────────────────────────
+  {
+    id:'A-401', name:'Multi-Role Fighter', model:'F-16C Fighting Falcon', registration:'NX-2201-C',
+    status:STATUS.LANDED, maintenanceStatus:'Post-Flight Inspection Required', lastMaintenanceDate:'2025-06-01',
+    totalOperatingHours:4863, generalCondition:'Good',
+    goingToFly:false, flightDuration:'02:35:20', arrivalTime:'18:42',
+    sensorData:{engineTemp:'',aircraftTemp:'',vibration:'',pressure:'',oilPressure:'',voltage:'',current:''},
+    sensorConditions:{}, sensorSubmitted:false, riskScore:null, riskLevel:null,
+    predictedIssues:[], predictionConfidence:0, aiExplanation:'', primaryFactor:'',
+    aiAnalysisHistory:[{date:'2025-05-15',riskScore:18,riskLevel:'LOW',issue:'No issues detected',status:STATUS.READY}],
+    components:[
+      {id:'c1',name:'Engine (GE F110)',condition:'Healthy',status:'OK'},
+      {id:'c2',name:'Landing Gear',condition:'Healthy',status:'OK'},
+      {id:'c3',name:'Avionics / LANTIRN Pod',condition:'Healthy',status:'OK'},
+      {id:'c4',name:'Fuel System',condition:'Healthy',status:'OK'},
+      {id:'c5',name:'Hydraulic System',condition:'Healthy',status:'OK'},
+    ],
+    requiredMaintenance:[], maintenanceCompletionState:{},
+    maintenanceHistory:[{date:'2025-06-01',type:'Scheduled Maintenance',description:'100-hour inspection completed. All systems nominal.',technician:'SGT. D. Rivera'}],
+    flightHistory:[
+      {date:'2025-06-12',duration:'02:35:20',mission:'Combat Air Patrol — Sector 12',pilot:'CAPT. E. Johnson',notes:'Just landed — post-flight inspection pending'},
+    ],
+    damageHistory:[],
+  },
+  {
+    id:'A-402', name:'Naval Strike Fighter', model:'F/A-18C Hornet', registration:'NX-4402-H',
+    status:STATUS.LANDED, maintenanceStatus:'Post-Flight Inspection Required', lastMaintenanceDate:'2025-05-25',
+    totalOperatingHours:6102, generalCondition:'Good',
+    goingToFly:false, flightDuration:'03:12:45', arrivalTime:'21:15',
+    sensorData:{engineTemp:'',aircraftTemp:'',vibration:'',pressure:'',oilPressure:'',voltage:'',current:''},
+    sensorConditions:{}, sensorSubmitted:false, riskScore:null, riskLevel:null,
+    predictedIssues:[], predictionConfidence:0, aiExplanation:'', primaryFactor:'',
+    aiAnalysisHistory:[{date:'2025-05-25',riskScore:24,riskLevel:'LOW',issue:'No issues detected',status:STATUS.READY}],
+    components:[
+      {id:'c1',name:'Engine (GE F404, x2)',condition:'Healthy',status:'OK'},
+      {id:'c2',name:'Landing Gear / Arrestor Hook',condition:'Healthy',status:'OK'},
+      {id:'c3',name:'AN/APG-73 Radar',condition:'Healthy',status:'OK'},
+      {id:'c4',name:'Fuel System',condition:'Healthy',status:'OK'},
+      {id:'c5',name:'ECS',condition:'Healthy',status:'OK'},
+    ],
+    requiredMaintenance:[], maintenanceCompletionState:{},
+    maintenanceHistory:[{date:'2025-05-25',type:'Scheduled Maintenance',description:'50-hour inspection. All systems checked nominal.',technician:'PO1 T. Adams'}],
+    flightHistory:[
+      {date:'2025-06-12',duration:'03:12:45',mission:'Strike Package — Exercise DESERT STRIKE',pilot:'LT. F. Wilson',notes:'Just landed. Post-flight inspection pending.'},
+    ],
+    damageHistory:[],
+  },
+];
+
+// =========================================================
+// HELPER COMPONENTS
+// =========================================================
+function StatusBadge({ status, large }) {
+  return (
+    <span style={{
+      display:'inline-block', padding: large?'6px 16px':'3px 10px',
+      borderRadius:20, fontSize:large?14:11, fontWeight:800, letterSpacing:'.04em',
+      background:STATUS_BG[status], color:STATUS_COLORS[status],
+      border:`2px solid ${STATUS_BORDER[status]}`,
+    }}>{STATUS_LABELS[status]}</span>
+  );
+}
+
+function SectionHdr({ children }) {
+  return <div className="section-hdr">{children}</div>;
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="info-row">
+      <span style={{fontSize:12,color:'#57606a',fontWeight:600}}>{label}</span>
+      <span style={{fontSize:13,color:'#1f2328',fontWeight:500,textAlign:'right',maxWidth:'60%'}}>{value}</span>
+    </div>
+  );
+}
+
+function RiskBar({ score }) {
+  let color = '#16a34a';
+  if (score>80) color='#dc2626'; else if(score>60) color='#ea580c'; else if(score>30) color='#ca8a04';
+  return (
+    <div style={{height:10,background:'#e5e7eb',borderRadius:6,overflow:'hidden',marginTop:6}}>
+      <div style={{width:`${score}%`,height:'100%',background:color,borderRadius:6,transition:'width .4s'}}/>
+    </div>
+  );
+}
+
+// =========================================================
+// DASHBOARD
+// =========================================================
+function CounterCard({ emoji, label, count, color, bg, border }) {
+  return (
+    <div style={{background:bg,border:`2px solid ${border}`,borderRadius:12,padding:'16px 20px',
+      minWidth:120,flex:1,textAlign:'center'}}>
+      <div style={{fontSize:30,fontWeight:900,color,lineHeight:1}}>{count}</div>
+      <div style={{fontSize:11,color:'#57606a',marginTop:4,fontWeight:600,letterSpacing:'.03em'}}>{emoji} {label}</div>
+    </div>
+  );
+}
+
+function AircraftCard({ ac, onSelect }) {
+  return (
+    <div className="ac-card" onClick={() => onSelect(ac.id)}
+      style={{borderLeft:`5px solid ${STATUS_COLORS[ac.status]}`,border:`1.5px solid ${STATUS_BORDER[ac.status]}`,borderLeft:`5px solid ${STATUS_COLORS[ac.status]}`}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8}}>
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontWeight:800,fontSize:16}}>{ac.id}</span>
+            {ac.goingToFly && <span style={{fontSize:10,background:'#eff6ff',color:'#2563eb',border:'1px solid #bfdbfe',borderRadius:10,padding:'2px 8px',fontWeight:700}}>✈ GOING TO FLY</span>}
+          </div>
+          <div style={{fontSize:13,color:'#57606a',marginTop:2}}>{ac.name}</div>
+          <div style={{fontSize:12,color:'#8b949e',marginTop:1}}>Model: {ac.model} · Reg: {ac.registration}</div>
+          {ac.status===STATUS.LANDED && (
+            <div style={{fontSize:11,color:'#ea580c',marginTop:3}}>
+              {ac.arrivalTime && `Arrived: ${ac.arrivalTime}`}{ac.flightDuration && ` · Flight: ${ac.flightDuration}`}
+            </div>
+          )}
+        </div>
+        <div style={{textAlign:'right'}}>
+          <StatusBadge status={ac.status}/>
+          <div style={{fontSize:11,color:'#57606a',marginTop:5}}>Maint: {ac.maintenanceStatus}</div>
+          {ac.riskScore!==null && <div style={{fontSize:11,color:STATUS_COLORS[ac.status],marginTop:2}}>Risk: {ac.riskScore}%</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DivisionPanel({ title, emoji, status, items, onSelect }) {
+  return (
+    <div style={{background:STATUS_BG[status],border:`2px solid ${STATUS_BORDER[status]}`,borderRadius:14,padding:'18px 20px',minWidth:0}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+        <div style={{fontWeight:800,fontSize:14,color:STATUS_COLORS[status],letterSpacing:'.04em'}}>{emoji} {title}</div>
+        <span style={{background:STATUS_COLORS[status],color:'#fff',borderRadius:20,padding:'2px 12px',fontSize:13,fontWeight:700}}>{items.length}</span>
+      </div>
+      {items.length===0
+        ? <div style={{color:'#8b949e',fontSize:13,padding:'12px 0',textAlign:'center'}}>No aircraft in this category</div>
+        : items.map(ac => <AircraftCard key={ac.id} ac={ac} onSelect={onSelect}/>)
+      }
+    </div>
+  );
+}
+
+function Dashboard({ aircraft, onSelect }) {
+  const ready = aircraft.filter(a=>a.status===STATUS.READY);
+  const maint = aircraft.filter(a=>a.status===STATUS.MAINTENANCE);
+  const notReady = aircraft.filter(a=>a.status===STATUS.NOT_READY);
+  const landed = aircraft.filter(a=>a.status===STATUS.LANDED);
+  return (
+    <div style={{minHeight:'100vh',background:'#f0f2f5'}}>
+      <div style={{background:'#0d1117',color:'#fff'}}>
+        <div style={{maxWidth:1400,margin:'0 auto',padding:'18px 24px',display:'flex',alignItems:'center',gap:16}}>
+          <div style={{fontSize:28}}>✈</div>
+          <div>
+            <div style={{fontWeight:800,fontSize:18,letterSpacing:'.05em',color:'#f0f6ff'}}>AIRCRAFT MISSION READINESS</div>
+            <div style={{fontSize:11,color:'#8b949e',letterSpacing:'.08em',marginTop:1}}>PREDICTIVE MAINTENANCE DASHBOARD — COMMAND CENTER</div>
+          </div>
+          <div style={{marginLeft:'auto',textAlign:'right'}}>
+            <div style={{fontSize:11,fontWeight:600,color:'#c9d1d9',letterSpacing:'.05em'}}>TOTAL AIRCRAFT</div>
+            <div style={{fontSize:28,fontWeight:900,color:'#58a6ff',lineHeight:1.1}}>{aircraft.length}</div>
+          </div>
+        </div>
+        <div style={{background:'#161b22',borderTop:'1px solid #21262d',padding:'6px 24px'}}>
+          <div style={{maxWidth:1400,margin:'0 auto',fontSize:10.5,color:'#6e7681'}}>
+            ⚠️ PROTOTYPE — AI predictive maintenance is a decision-support system. Predictions are estimates only and require certified maintenance personnel verification. Not for operational use.
+          </div>
+        </div>
+      </div>
+      <div style={{maxWidth:1400,margin:'0 auto',padding:'24px'}}>
+        <div style={{display:'flex',gap:12,marginBottom:24,flexWrap:'wrap'}}>
+          <CounterCard emoji="✈" label="TOTAL" count={aircraft.length} color="#3b82d4" bg="#eff6ff" border="#bfdbfe"/>
+          <CounterCard emoji="🟢" label="READY TO FLY" count={ready.length} color="#16a34a" bg="#f0fdf4" border="#86efac"/>
+          <CounterCard emoji="🟡" label="MAINTENANCE REQ." count={maint.length} color="#ca8a04" bg="#fefce8" border="#fde047"/>
+          <CounterCard emoji="🔴" label="NOT READY" count={notReady.length} color="#dc2626" bg="#fef2f2" border="#fca5a5"/>
+          <CounterCard emoji="🟠" label="RECENTLY LANDED" count={landed.length} color="#ea580c" bg="#fff7ed" border="#fdba74"/>
+        </div>
+        <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:10,padding:'12px 18px',marginBottom:20,display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:16}}>ℹ️</span>
+          <span style={{fontSize:13,color:'#57606a'}}>Click any aircraft card to view details, sensor data, maintenance workflow, and AI risk assessment. Recently landed aircraft require sensor submission to determine mission readiness.</span>
+        </div>
+        <div className="grid-dash" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:20}}>
+          <DivisionPanel title="READY TO FLY" emoji="🟢" status={STATUS.READY} items={ready} onSelect={onSelect}/>
+          <DivisionPanel title="MAINTENANCE REQUIRED" emoji="🟡" status={STATUS.MAINTENANCE} items={maint} onSelect={onSelect}/>
+          <DivisionPanel title="NOT READY TO FLY" emoji="🔴" status={STATUS.NOT_READY} items={notReady} onSelect={onSelect}/>
+          <DivisionPanel title="RECENTLY LANDED" emoji="🟠" status={STATUS.LANDED} items={landed} onSelect={onSelect}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================
+// AIRCRAFT DETAIL — TABS
+// =========================================================
+const TABS = ['📋 Overview','📅 History','🔧 Components & Maintenance','📡 Sensor Analysis'];
+
+function OverviewTab({ ac }) {
+  return (
+    <div className="card">
+      <SectionHdr>Aircraft Information</SectionHdr>
+      <div className="grid-2" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0 24px'}}>
+        <div>
+          <InfoRow label="Aircraft ID" value={ac.id}/>
+          <InfoRow label="Type / Name" value={ac.name}/>
+          <InfoRow label="Model" value={ac.model}/>
+          <InfoRow label="Registration" value={ac.registration}/>
+          <InfoRow label="General Condition" value={ac.generalCondition}/>
+        </div>
+        <div>
+          <InfoRow label="Last Maintenance" value={ac.lastMaintenanceDate}/>
+          <InfoRow label="Total Operating Hours" value={`${ac.totalOperatingHours.toLocaleString()} hrs`}/>
+          <InfoRow label="Maintenance Status" value={ac.maintenanceStatus}/>
+          {ac.status===STATUS.LANDED && ac.flightDuration && <InfoRow label="Last Flight Duration" value={ac.flightDuration}/>}
+          {ac.status===STATUS.LANDED && ac.arrivalTime && <InfoRow label="Arrival Time" value={ac.arrivalTime}/>}
+        </div>
+      </div>
+      <div style={{marginTop:16,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <StatusBadge status={ac.status} large/>
+        {ac.goingToFly && (
+          <span style={{fontSize:12,background:'#eff6ff',color:'#2563eb',border:'1px solid #bfdbfe',borderRadius:10,padding:'4px 12px',fontWeight:700}}>✈ GOING TO FLY — Scheduled</span>
+        )}
+        {ac.goingToFly && (ac.status===STATUS.NOT_READY||ac.status===STATUS.MAINTENANCE) && (
+          <span style={{fontSize:11,color:'#dc2626',fontWeight:700}}>⚠️ Safety override in effect — Current status remains {STATUS_LABELS[ac.status]}</span>
+        )}
+      </div>
+      {ac.riskScore!==null && (
+        <div style={{marginTop:16,padding:'12px 16px',background:'#f8fafc',border:'1px solid #e5e7eb',borderRadius:10}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#57606a',letterSpacing:'.08em',marginBottom:6}}>LATEST AI RISK ASSESSMENT</div>
+          <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+            <div>
+              <span style={{fontSize:28,fontWeight:900,color:riskColor(ac.riskLevel)}}>{riskIcon(ac.riskLevel)} {ac.riskScore}%</span>
+              <span style={{fontSize:13,fontWeight:700,color:riskColor(ac.riskLevel),marginLeft:10}}>{ac.riskLevel} RISK</span>
+            </div>
+            <div style={{flex:1,minWidth:180}}><RiskBar score={ac.riskScore}/></div>
+          </div>
+          {ac.primaryFactor && <div style={{fontSize:12,color:'#57606a',marginTop:6}}>Primary Factor: <strong>{ac.primaryFactor}</strong></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryTab({ ac }) {
+  return (
+    <div className="card">
+      <SectionHdr>Flight History</SectionHdr>
+      {ac.flightHistory.length===0
+        ? <p style={{color:'#8b949e',fontSize:13}}>No flight history recorded.</p>
+        : ac.flightHistory.map((f,i) => (
+            <div key={i} style={{display:'flex',gap:14,marginBottom:14}}>
+              <div style={{width:3,background:'#3b82d4',borderRadius:3,flexShrink:0,minHeight:50}}/>
+              <div>
+                <div style={{fontWeight:700,fontSize:13}}>{f.date} — {f.mission}</div>
+                <div style={{fontSize:12,color:'#57606a',marginTop:2}}>Pilot: {f.pilot} · Duration: {f.duration}</div>
+                <div style={{fontSize:12,color:'#8b949e',marginTop:2,fontStyle:'italic'}}>{f.notes}</div>
+              </div>
+            </div>
+          ))
+      }
+      <SectionHdr>Maintenance History</SectionHdr>
+      {ac.maintenanceHistory.length===0
+        ? <p style={{color:'#8b949e',fontSize:13}}>No maintenance history recorded.</p>
+        : ac.maintenanceHistory.map((m,i) => (
+            <div key={i} style={{display:'flex',gap:14,marginBottom:14}}>
+              <div style={{width:3,background:'#16a34a',borderRadius:3,flexShrink:0,minHeight:50}}/>
+              <div>
+                <div style={{fontWeight:700,fontSize:13}}>{m.date} — {m.type}</div>
+                <div style={{fontSize:12,color:'#57606a',marginTop:2}}>{m.description}</div>
+                {m.technician && <div style={{fontSize:12,color:'#8b949e',marginTop:2}}>Technician: {m.technician}</div>}
+              </div>
+            </div>
+          ))
+      }
+      {ac.damageHistory.length>0 && (
+        <>
+          <SectionHdr>Damage History</SectionHdr>
+          {ac.damageHistory.map((d,i) => (
+            <div key={i} style={{display:'flex',gap:14,marginBottom:12}}>
+              <div style={{width:3,background:'#dc2626',borderRadius:3,flexShrink:0,minHeight:40}}/>
+              <div>
+                <div style={{fontWeight:700,fontSize:13,color:'#dc2626'}}>{d.date} — {d.component}</div>
+                <div style={{fontSize:12,color:'#57606a',marginTop:2}}>{d.description}</div>
+                <div style={{fontSize:12,marginTop:2}}>
+                  Severity: <span style={{fontWeight:700,color:d.severity==='Critical'?'#dc2626':'#ca8a04'}}>{d.severity}</span>
+                  {' · '}Status: <span style={{color:d.repaired?'#16a34a':'#dc2626',fontWeight:600}}>{d.repaired?'✅ Repaired':'❌ Unresolved'}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+      {ac.aiAnalysisHistory&&ac.aiAnalysisHistory.length>0 && (
+        <>
+          <SectionHdr>AI Analysis History</SectionHdr>
+          {ac.aiAnalysisHistory.map((h,i) => (
+            <div key={i} style={{display:'flex',gap:14,marginBottom:12}}>
+              <div style={{width:3,background:riskColor(h.riskLevel),borderRadius:3,flexShrink:0,minHeight:40}}/>
+              <div>
+                <div style={{fontWeight:700,fontSize:13}}>{h.date} — {riskIcon(h.riskLevel)} Risk: {h.riskScore}% ({h.riskLevel})</div>
+                <div style={{fontSize:12,color:'#57606a',marginTop:2}}>Potential Issue: {h.issue}</div>
+                <StatusBadge status={h.status}/>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ComponentsTab({ ac, updateAircraft }) {
+  const [undoStack, setUndoStack] = useState([]);
+  const healthy = ac.components.filter(c=>c.status==='OK');
+  const faulty = ac.components.filter(c=>c.status!=='OK');
+
+  const toggle = (mId) => {
+    const prevState = { completionState:{...ac.maintenanceCompletionState}, status:ac.status, maintenanceStatus:ac.maintenanceStatus };
+    setUndoStack(s=>[...s,prevState]);
+    const next = {...ac.maintenanceCompletionState, [mId]:!ac.maintenanceCompletionState[mId]};
+    const updatedAc = {...ac, maintenanceCompletionState:next};
+    const newStatus = computeStatusFromAc(updatedAc);
+    updateAircraft(ac.id, prev => ({...prev, maintenanceCompletionState:next, status:newStatus, maintenanceStatus:maintenanceLabel(prev,newStatus)}));
+  };
+
+  const markAll = () => {
+    const prevState = { completionState:{...ac.maintenanceCompletionState}, status:ac.status, maintenanceStatus:ac.maintenanceStatus };
+    setUndoStack(s=>[...s,prevState]);
+    const next = {};
+    ac.requiredMaintenance.forEach(m => { next[m.id]=true; });
+    const updatedAc = {...ac, maintenanceCompletionState:next};
+    const newStatus = computeStatusFromAc(updatedAc);
+    updateAircraft(ac.id, prev => ({...prev, maintenanceCompletionState:next, status:newStatus, maintenanceStatus:maintenanceLabel(prev,newStatus)}));
+  };
+
+  const undo = () => {
+    if (!undoStack.length) return;
+    const last = undoStack[undoStack.length-1];
+    setUndoStack(s=>s.slice(0,-1));
+    const updatedAc = {...ac, maintenanceCompletionState:last.completionState};
+    const newStatus = computeStatusFromAc(updatedAc);
+    updateAircraft(ac.id, prev => ({...prev, maintenanceCompletionState:last.completionState, status:newStatus, maintenanceStatus:maintenanceLabel(prev,newStatus)}));
+  };
+
+  const allDone = ac.requiredMaintenance.length>0 && ac.requiredMaintenance.every(m=>ac.maintenanceCompletionState[m.id]);
+
+  return (
+    <div className="card">
+      {faulty.length>0 && (
+        <>
+          <SectionHdr>Damaged / Faulty Components</SectionHdr>
+          {faulty.map(c=>(
+            <div key={c.id} style={{background:c.status==='FAIL'?'#fef2f2':'#fefce8',border:`1.5px solid ${c.status==='FAIL'?'#fca5a5':'#fde047'}`,borderRadius:10,padding:'12px 16px',marginBottom:12}}>
+              <div style={{fontWeight:700,fontSize:13,color:c.status==='FAIL'?'#dc2626':'#92400e'}}>
+                {c.status==='FAIL'?'❌':'⚠️'} {c.name} — {c.status==='FAIL'?'Damaged':'Degraded'}
+              </div>
+              {c.faultDesc && <div style={{fontSize:12,color:'#57606a',marginTop:4}}>{c.faultDesc}</div>}
+              <div style={{display:'flex',gap:16,marginTop:6,flexWrap:'wrap'}}>
+                {c.severity && <span style={{fontSize:11,color:c.severity==='Critical'?'#dc2626':'#ca8a04',fontWeight:700}}>Severity: {c.severity}</span>}
+                {c.dateDetected && <span style={{fontSize:11,color:'#57606a'}}>Detected: {c.dateDetected}</span>}
+                {c.replacementRequired && <span style={{fontSize:11,color:'#dc2626',fontWeight:700}}>🔧 Replacement Required</span>}
+              </div>
+              {c.action && <div style={{fontSize:12,color:'#7c5cd8',marginTop:4,fontWeight:600}}>→ Recommended: {c.action}</div>}
+            </div>
+          ))}
+        </>
+      )}
+
+      <SectionHdr>Healthy Components</SectionHdr>
+      {healthy.length===0
+        ? <p style={{fontSize:13,color:'#8b949e'}}>No fully healthy components.</p>
+        : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8,marginBottom:16}}>
+            {healthy.map(c=>(
+              <div key={c.id} style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#166534',fontWeight:600}}>✅ {c.name}</div>
+            ))}
+          </div>
+      }
+
+      {ac.requiredMaintenance.length>0 && (
+        <>
+          <SectionHdr>Required Maintenance Tasks</SectionHdr>
+          <div style={{marginBottom:16}}>
+            {ac.requiredMaintenance.map(m=>{
+              const done = ac.maintenanceCompletionState[m.id];
+              return (
+                <div key={m.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:8,marginBottom:8,
+                  background:done?'#f0fdf4':'#fef2f2',border:`1.5px solid ${done?'#86efac':'#fca5a5'}`}}>
+                  <input type="checkbox" checked={!!done} onChange={()=>toggle(m.id)}
+                    style={{width:18,height:18,cursor:'pointer',accentColor:'#16a34a'}}/>
+                  <span style={{fontSize:13,fontWeight:600,color:done?'#166534':'#7f1d1d',textDecoration:done?'line-through':'none',flex:1}}>
+                    {done?'✅':'❌'} {m.task}
+                  </span>
+                  <span style={{fontSize:11,color:'#57606a',fontWeight:600,textTransform:'uppercase'}}>{m.type}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
+            {!allDone
+              ? <button className="btn-success" onClick={markAll}>✓ Mark All Complete</button>
+              : <button className="btn-done" disabled>✅ All Completed ✓</button>
+            }
+            {undoStack.length>0 && <button className="btn-undo" onClick={undo}>↩ Undo</button>}
+          </div>
+          {allDone && (
+            <div style={{marginTop:16,background:'#f0fdf4',border:'2px solid #86efac',borderRadius:10,padding:'14px 18px'}}>
+              <div style={{fontWeight:800,color:'#166534',fontSize:14,marginBottom:8}}>✅ All maintenance tasks completed</div>
+              <StatusBadge status={ac.status} large/>
+            </div>
+          )}
+        </>
+      )}
+      {ac.requiredMaintenance.length===0 && (
+        <div style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:8,padding:'10px 14px',marginTop:12,fontSize:13,color:'#166534',fontWeight:600}}>
+          ✅ No outstanding maintenance requirements
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =========================================================
+// SENSOR ANALYSIS TAB
+// =========================================================
+function SensorAnalysisTab({ ac, updateAircraft }) {
+  const [inputs, setInputs] = useState(() => ({...ac.sensorData}));
+  const [errors, setErrors] = useState({});
+  const [flightDuration, setFlightDuration] = useState(ac.flightDuration||'');
+  const [arrivalTime, setArrivalTime] = useState(ac.arrivalTime||'');
+  const [goingToFly, setGoingToFly] = useState(ac.goingToFly||false);
+  const [flightErrors, setFlightErrors] = useState({});
+  const [submitted, setSubmitted] = useState(ac.sensorSubmitted||false);
+  const [result, setResult] = useState(ac.sensorSubmitted ? {
+    conditions:ac.sensorConditions, riskScore:ac.riskScore, riskLevel:ac.riskLevel,
+    predictedIssues:ac.predictedIssues, predictionConfidence:ac.predictionConfidence,
+    aiExplanation:ac.aiExplanation, primaryFactor:ac.primaryFactor,
+  } : null);
+
+  const validateFlight = () => {
+    const fe = {};
+    if (flightDuration && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(flightDuration))
+      fe.flightDuration = 'Invalid format — use HH:MM or HH:MM:SS';
+    if (arrivalTime && !/^\d{1,2}:\d{2}$/.test(arrivalTime))
+      fe.arrivalTime = 'Invalid format — use HH:MM (e.g. 18:42)';
+    return fe;
+  };
+
+  const handleSubmit = () => {
+    const fe = validateFlight();
+    setFlightErrors(fe);
+    if (Object.keys(fe).length) return;
+    const se = validateSensorInputs(inputs);
+    setErrors(se);
+    if (Object.keys(se).length) return;
+
+    const res = analyzeSensors(inputs);
+    setResult(res);
+    setSubmitted(true);
+
+    const newHistoryEntry = {
+      date: new Date().toISOString().split('T')[0],
+      riskScore:res.riskScore, riskLevel:res.riskLevel,
+      issue: res.predictedIssues.length>0 ? res.predictedIssues[0].system : 'No issues detected',
+      status: res.newStatus,
+    };
+
+    updateAircraft(ac.id, prev => ({
+      ...prev,
+      sensorData:{...inputs},
+      sensorConditions:res.conditions,
+      sensorSubmitted:true,
+      riskScore:res.riskScore, riskLevel:res.riskLevel,
+      predictedIssues:res.predictedIssues,
+      predictionConfidence:res.predictionConfidence,
+      aiExplanation:res.aiExplanation,
+      primaryFactor:res.primaryFactor,
+      status:res.newStatus,
+      flightDuration, arrivalTime, goingToFly,
+      maintenanceStatus:maintenanceLabel(prev, res.newStatus),
+      aiAnalysisHistory:[newHistoryEntry,...(prev.aiAnalysisHistory||[])],
+    }));
+  };
+
+  const handleReset = () => {
+    setSubmitted(false);
+    setResult(null);
+    setErrors({});
+    setFlightErrors({});
+  };
+
+  const handleGoingToFly = (val) => {
+    setGoingToFly(val);
+    updateAircraft(ac.id, prev => ({...prev, goingToFly:val}));
+  };
+
+  return (
+    <div className="card">
+      {/* Flight info for landed aircraft */}
+      {(ac.status===STATUS.LANDED||flightDuration||arrivalTime) && (
+        <>
+          <SectionHdr>Recently Landed — Flight Information</SectionHdr>
+          <div className="grid-2" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:20}}>
+            <div>
+              <label style={{fontSize:12,fontWeight:700,color:'#57606a',display:'block',marginBottom:4}}>Flight Time Taken</label>
+              <input value={flightDuration} onChange={e=>setFlightDuration(e.target.value)}
+                placeholder="e.g. 02:35:20 or 01:30"
+                style={{width:'100%',padding:'8px 12px',borderRadius:8,border:`1.5px solid ${flightErrors.flightDuration?'#dc2626':'#e5e7eb'}`,fontSize:13}}/>
+              {flightErrors.flightDuration && <div style={{color:'#dc2626',fontSize:11,marginTop:3}}>⚠ {flightErrors.flightDuration}</div>}
+            </div>
+            <div>
+              <label style={{fontSize:12,fontWeight:700,color:'#57606a',display:'block',marginBottom:4}}>Arrival Time at Port</label>
+              <input value={arrivalTime} onChange={e=>setArrivalTime(e.target.value)}
+                placeholder="e.g. 18:42"
+                style={{width:'100%',padding:'8px 12px',borderRadius:8,border:`1.5px solid ${flightErrors.arrivalTime?'#dc2626':'#e5e7eb'}`,fontSize:13}}/>
+              {flightErrors.arrivalTime && <div style={{color:'#dc2626',fontSize:11,marginTop:3}}>⚠ {flightErrors.arrivalTime}</div>}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Going to Fly checkbox */}
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20,padding:'10px 14px',background:'#eff6ff',borderRadius:8,border:'1.5px solid #bfdbfe',flexWrap:'wrap'}}>
+        <input type="checkbox" id="gtf" checked={goingToFly} onChange={e=>handleGoingToFly(e.target.checked)}
+          style={{width:18,height:18,cursor:'pointer',accentColor:'#2563eb'}}/>
+        <label htmlFor="gtf" style={{fontWeight:700,fontSize:13,color:'#1d4ed8',cursor:'pointer'}}>
+          {goingToFly?'☑':'☐'} GOING TO FLY — Flight Intent Scheduled
+        </label>
+        {goingToFly&&(ac.status===STATUS.NOT_READY||ac.status===STATUS.MAINTENANCE) && (
+          <span style={{fontSize:11,color:'#dc2626',fontWeight:700}}>
+            ⚠️ Safety override: {STATUS_LABELS[ac.status]} status remains in effect
+          </span>
+        )}
+      </div>
+
+      {/* Sensor Inputs */}
+      <SectionHdr>Post-Flight Sensor Data</SectionHdr>
+      <div style={{fontSize:12,color:'#57606a',marginBottom:14}}>Enter all measured values. All 7 fields required. Accepts decimal numbers (e.g. 1050.5).</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14,marginBottom:22}}>
+        {SENSOR_KEYS.map(key => {
+          const std = SENSOR_STANDARDS[key];
+          const cond = result?.conditions?.[key];
+          return (
+            <div key={key} style={{
+              background:cond==='CRITICAL'?'#fef2f2':cond==='WARNING'?'#fefce8':cond==='NORMAL'?'#f0fdf4':'#f8fafc',
+              border:`1.5px solid ${cond==='CRITICAL'?'#fca5a5':cond==='WARNING'?'#fde047':cond==='NORMAL'?'#86efac':'#e5e7eb'}`,
+              borderRadius:10, padding:'12px 14px',
+            }}>
+              <div style={{fontWeight:700,fontSize:13,color:'#1f2328',marginBottom:2}}>{std.label}</div>
+              <div style={{fontSize:11,color:'#57606a',marginBottom:7}}>{std.desc}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <input type="number" step="any" value={inputs[key]??''}
+                  onChange={e=>{setInputs(p=>({...p,[key]:e.target.value}));if(errors[key])setErrors(p=>({...p,[key]:undefined}));}}
+                  placeholder={`e.g. ${((std.min+std.max)/2).toFixed(1)}`}
+                  style={{flex:1,padding:'7px 10px',borderRadius:7,border:`1.5px solid ${errors[key]?'#dc2626':'#d1d5db'}`,fontSize:13}}/>
+                <span style={{fontSize:12,color:'#57606a',fontWeight:600,minWidth:32}}>{std.unit}</span>
+              </div>
+              {errors[key] && <div style={{color:'#dc2626',fontSize:11,marginTop:3}}>⚠ {errors[key]}</div>}
+              {cond && (
+                <div style={{marginTop:7,fontSize:12,fontWeight:700,color:condColor(cond)}}>
+                  {condIcon(cond)} {condLabel(cond)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Submit controls */}
+      <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+        {!submitted
+          ? <button className="btn-primary" onClick={handleSubmit}>☐ SUBMIT SENSOR DATA</button>
+          : <>
+              <button className="btn-done" disabled>☑ SUBMITTED ✓</button>
+              <button className="btn-resubmit" onClick={handleReset}>↻ New Submission (Resubmit)</button>
+            </>
+        }
+      </div>
+
+      {/* Analysis Result */}
+      {result && submitted && <AnalysisResultPanel result={result} aircraftId={ac.id} sensorInputs={inputs} currentStatus={ac.status}/>}
+    </div>
+  );
+}
+
+function AnalysisResultPanel({ result, aircraftId, sensorInputs, currentStatus }) {
+  const { conditions, riskScore, riskLevel, predictedIssues, predictionConfidence, aiExplanation, primaryFactor } = result;
+  const rc = riskColor(riskLevel);
+  const ri = riskIcon(riskLevel);
+  return (
+    <div style={{marginTop:24,background:'#f8fafc',border:'2px solid #e5e7eb',borderRadius:14,padding:'20px'}}>
+      <div style={{fontWeight:800,fontSize:16,color:'#1f2328',marginBottom:18,letterSpacing:'.04em',borderBottom:'2px solid #e5e7eb',paddingBottom:10}}>
+        📊 SENSOR ANALYSIS COMPLETE — {aircraftId}
+      </div>
+
+      {/* Sensor Conditions */}
+      <div style={{fontWeight:700,fontSize:12,color:'#57606a',letterSpacing:'.08em',marginBottom:10}}>SENSOR CONDITIONS</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(185px,1fr))',gap:8,marginBottom:22}}>
+        {SENSOR_KEYS.map(key=>{
+          const cond = conditions[key]||'NORMAL';
+          const std = SENSOR_STANDARDS[key];
+          const val = parseFloat(sensorInputs[key]);
+          return (
+            <div key={key} style={{background:cond==='CRITICAL'?'#fef2f2':cond==='WARNING'?'#fefce8':'#f0fdf4',
+              border:`1px solid ${cond==='CRITICAL'?'#fca5a5':cond==='WARNING'?'#fde047':'#86efac'}`,borderRadius:8,padding:'8px 12px'}}>
+              <div style={{fontSize:12,fontWeight:700}}>{std.label}</div>
+              <div style={{fontSize:12,color:'#57606a',marginTop:1}}>{isNaN(val)?'—':`${val} ${std.unit}`}</div>
+              <div style={{fontSize:12,fontWeight:700,color:condColor(cond),marginTop:4}}>{condIcon(cond)} {condLabel(cond)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Risk + Status */}
+      <div className="grid-2" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:22}}>
+        <div style={{background:'#fff',border:`2px solid ${rc}`,borderRadius:12,padding:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#57606a',letterSpacing:'.08em',marginBottom:6}}>AI RISK ASSESSMENT</div>
+          <div style={{fontSize:38,fontWeight:900,color:rc,lineHeight:1}}>{ri} {riskScore}%</div>
+          <div style={{fontSize:13,fontWeight:800,color:rc,marginTop:6,letterSpacing:'.05em'}}>RISK LEVEL: {riskLevel}</div>
+          <RiskBar score={riskScore}/>
+        </div>
+        <div style={{background:'#fff',border:'1.5px solid #e5e7eb',borderRadius:12,padding:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#57606a',letterSpacing:'.08em',marginBottom:8}}>FINAL AIRCRAFT STATUS</div>
+          <StatusBadge status={currentStatus} large/>
+          <div style={{fontSize:12,fontWeight:700,color:'#57606a',marginTop:12}}>PRIMARY RISK FACTOR</div>
+          <div style={{fontSize:13,color:'#1f2328',marginTop:4}}>{primaryFactor}</div>
+        </div>
+      </div>
+
+      {/* Risk bar per sensor */}
+      <div style={{fontWeight:700,fontSize:12,color:'#57606a',letterSpacing:'.08em',marginBottom:10}}>RISK CONTRIBUTION BY SENSOR</div>
+      <div style={{marginBottom:22}}>
+        {SENSOR_KEYS.map(key=>{
+          const cond = conditions[key]||'NORMAL';
+          return (
+            <div key={key} style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+              <span style={{fontSize:12,width:200,color:'#1f2328',fontWeight:600}}>{SENSOR_STANDARDS[key].label}</span>
+              <span style={{fontSize:12,fontWeight:700,color:condColor(cond),width:85}}>{condIcon(cond)} {condLabel(cond)}</span>
+              <div style={{flex:1,height:8,background:'#e5e7eb',borderRadius:4}}>
+                <div style={{width:cond==='NORMAL'?'4%':cond==='WARNING'?'45%':'88%',height:'100%',background:condColor(cond),borderRadius:4}}/>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Predicted Issues */}
+      {predictedIssues.length>0 && (
+        <>
+          <div style={{fontWeight:700,fontSize:12,color:'#57606a',letterSpacing:'.08em',marginBottom:10}}>PREDICTED POTENTIAL ISSUES</div>
+          <div style={{marginBottom:22}}>
+            {predictedIssues.map((issue,i)=>(
+              <div key={i} style={{background:issue.condition==='CRITICAL'?'#fef2f2':'#fefce8',
+                border:`1.5px solid ${issue.condition==='CRITICAL'?'#fca5a5':'#fde047'}`,borderRadius:10,padding:'12px 16px',marginBottom:8}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                  <div style={{fontWeight:700,fontSize:13,color:condColor(issue.condition)}}>
+                    {i+1}. {condIcon(issue.condition)} {issue.system}
+                  </div>
+                  <span style={{fontSize:12,fontWeight:700,color:condColor(issue.condition),
+                    background:'#fff',border:`1px solid ${condColor(issue.condition)}`,borderRadius:12,padding:'2px 10px'}}>
+                    Confidence: {issue.confidence}%
+                  </span>
+                </div>
+                <div style={{fontSize:12,color:'#57606a',marginTop:4}}>
+                  ⚠️ Requires Inspection — Predicted from abnormal {issue.sensorLabel} readings
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:11,color:'#57606a',marginBottom:18,fontStyle:'italic'}}>
+            Prediction Confidence: <strong>{predictionConfidence}%</strong> — Estimated predictions for inspection purposes only. Not guaranteed failures. Requires certified maintenance personnel verification.
+          </div>
+        </>
+      )}
+
+      {/* AI Explanation */}
+      <div style={{background:'#f0f8ff',border:'1.5px solid #bfdbfe',borderRadius:12,padding:16}}>
+        <div style={{fontWeight:800,fontSize:13,color:'#1d4ed8',marginBottom:8,letterSpacing:'.04em'}}>🤖 AI ANALYSIS EXPLANATION</div>
+        <div style={{fontSize:13,color:'#1f2328',lineHeight:1.75}}>{aiExplanation}</div>
+        <div style={{marginTop:10,fontSize:11,color:'#6e7681',borderTop:'1px solid #dbeafe',paddingTop:8}}>
+          PROTOTYPE DISCLAIMER — This is a deterministic decision-support estimate. Results require verification by certified maintenance and flight operations personnel before any operational decision.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================
+// AIRCRAFT DETAIL MAIN
+// =========================================================
+function AircraftDetail({ aircraft: ac, updateAircraft, onBack }) {
+  const [tab, setTab] = useState(TABS[0]);
+  return (
+    <div style={{minHeight:'100vh',background:'#f0f2f5'}}>
+      <div style={{background:'#0d1117',color:'#fff'}}>
+        <div style={{maxWidth:1100,margin:'0 auto',padding:'14px 24px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+          <button onClick={onBack}
+            style={{background:'none',border:'1.5px solid #30363d',color:'#c9d1d9',borderRadius:8,padding:'6px 14px',cursor:'pointer',fontSize:13,fontWeight:600}}>
+            ← Dashboard
+          </button>
+          <div style={{width:1,height:30,background:'#30363d'}}/>
+          <div>
+            <div style={{fontWeight:800,fontSize:16,color:'#f0f6ff'}}>{ac.id} — {ac.name}</div>
+            <div style={{fontSize:11,color:'#8b949e',letterSpacing:'.04em'}}>{ac.model} · {ac.registration}</div>
+          </div>
+          <div style={{marginLeft:'auto'}}><StatusBadge status={ac.status} large/></div>
+        </div>
+        <div className="tab-bar">
+          {TABS.map(t=>(
+            <div key={t} className={`tab${tab===t?' active':''}`} onClick={()=>setTab(t)}>{t}</div>
+          ))}
+        </div>
+      </div>
+      <div style={{maxWidth:1100,margin:'0 auto',padding:'24px'}}>
+        {/* Status alert bars */}
+        {ac.status===STATUS.NOT_READY && (
+          <div style={{background:'#fef2f2',border:'2px solid #fca5a5',borderRadius:10,padding:'12px 18px',marginBottom:18,display:'flex',gap:10,alignItems:'center'}}>
+            <span style={{fontSize:18}}>🔴</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:'#dc2626'}}>NOT READY TO FLY</div>
+              <div style={{fontSize:12,color:'#57606a',marginTop:2}}>This aircraft is NOT cleared for flight operations. Critical issues or incomplete required maintenance must be fully resolved and re-certified before any flight operation.</div>
+            </div>
+          </div>
+        )}
+        {ac.status===STATUS.MAINTENANCE && (
+          <div style={{background:'#fefce8',border:'2px solid #fde047',borderRadius:10,padding:'12px 18px',marginBottom:18,display:'flex',gap:10,alignItems:'center'}}>
+            <span style={{fontSize:18}}>🟡</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:'#92400e'}}>MAINTENANCE REQUIRED</div>
+              <div style={{fontSize:12,color:'#57606a',marginTop:2}}>This aircraft requires maintenance or inspection before the next flight mission. Complete all required maintenance tasks to restore flight readiness.</div>
+            </div>
+          </div>
+        )}
+        {ac.status===STATUS.LANDED && (
+          <div style={{background:'#fff7ed',border:'2px solid #fdba74',borderRadius:10,padding:'12px 18px',marginBottom:18,display:'flex',gap:10,alignItems:'center'}}>
+            <span style={{fontSize:18}}>🟠</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:'#ea580c'}}>RECENTLY LANDED — SENSOR SUBMISSION REQUIRED</div>
+              <div style={{fontSize:12,color:'#57606a',marginTop:2}}>
+                Aircraft has recently landed. Enter post-flight sensor readings in the Sensor Analysis tab to determine mission readiness status.
+                {ac.flightDuration&&` Flight time: ${ac.flightDuration}.`}{ac.arrivalTime&&` Arrived: ${ac.arrivalTime}.`}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab content */}
+        {tab===TABS[0] && <OverviewTab ac={ac}/>}
+        {tab===TABS[1] && <HistoryTab ac={ac}/>}
+        {tab===TABS[2] && <ComponentsTab ac={ac} updateAircraft={updateAircraft}/>}
+        {tab===TABS[3] && <SensorAnalysisTab ac={ac} updateAircraft={updateAircraft}/>}
+      </div>
+    </div>
+  );
+}
+
+// =========================================================
+// APP ROOT
+// =========================================================
+function App() {
+  const [aircraft, setAircraft] = useState(() => INITIAL_AIRCRAFT.map(a=>({...a})));
+  const [selectedId, setSelectedId] = useState(null);
+
+  const updateAircraft = useCallback((id, updater) => {
+    setAircraft(prev => prev.map(a => a.id===id ? (typeof updater==='function' ? updater(a) : {...a,...updater}) : a));
+  }, []);
+
+  const selected = aircraft.find(a=>a.id===selectedId)||null;
+
+  if (selected) {
+    return <AircraftDetail aircraft={selected} allAircraft={aircraft} updateAircraft={updateAircraft} onBack={()=>setSelectedId(null)}/>;
+  }
+  return <Dashboard aircraft={aircraft} onSelect={setSelectedId}/>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
